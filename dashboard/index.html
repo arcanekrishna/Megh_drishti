@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEGH-DRISHTI | AI Hyper-Local Severe Weather Early Warning Dashboard</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Google Fonts & Font Awesome Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dark-theme">
+  <!-- Top Navigation Bar -->
+  <header class="navbar">
+    <div class="nav-brand">
+      <div class="brand-logo">
+        <i class="fa-solid fa-cloud-bolt"></i>
+      </div>
+      <div>
+        <h1 class="brand-title">MEGH-DRISHTI <span class="badge-sih">SIH 2026</span></h1>
+        <p class="brand-subtitle">AI-Driven Hyper-Local Nowcasting & Early Warning System</p>
+      </div>
+    </div>
+
+    <div class="nav-center">
+      <div class="system-status-pill">
+        <span class="pulse-dot"></span>
+        <span id="systemStatusText">LIVE INFERENCE ACTIVE (2-6h LEAD TIME)</span>
+      </div>
+      <div class="scenario-selector">
+        <label><i class="fa-solid fa-flask"></i> Scenario:</label>
+        <select id="scenarioSelect">
+          <option value="himachal_cloudburst_2023" selected>Himachal Cloudburst & Flash Flood (July 2023)</option>
+          <option value="uttarakhand_kedarnath">Kedarnath Mandakini Basin Convection</option>
+          <option value="pre_monsoon_squall">Pre-Monsoon Convective Squall Line</option>
+          <option value="normal_monsoon">Routine Baseline Conditions</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="nav-right">
+      <div class="alert-counter" id="criticalAlertBadge">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span id="alertCountNumber">3</span> CRITICAL ALERTS
+      </div>
+      <a href="video_prototype.html" target="_blank" class="btn-video" title="Watch AI Architecture Animated Video Walkthrough" style="background: linear-gradient(135deg, #ef4444, #8b5cf6); color: white; padding: 7px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; text-decoration: none; display: flex; align-items: center; gap: 6px; box-shadow: 0 0 12px rgba(239, 68, 68, 0.35);">
+        <i class="fa-solid fa-circle-play"></i> AI Model Video
+      </a>
+      <button class="btn-refresh" id="btnRefreshNowcast" title="Run Real-Time AI Nowcast">
+        <i class="fa-solid fa-arrows-rotate"></i> Re-Run Nowcast
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Grid Layout -->
+  <div class="dashboard-container">
+    <!-- Left Sidebar: Controls & Layer Switcher -->
+    <aside class="sidebar-left">
+      <!-- Forecast Lead Time Controller -->
+      <div class="card control-card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-clock"></i> Predictive Lead Time</h3>
+          <span class="lead-time-display" id="leadTimeDisplay">+1.0 Hour</span>
+        </div>
+        <div class="slider-wrapper">
+          <input type="range" id="timeSlider" min="0" max="5" value="1" step="1" />
+          <div class="slider-ticks">
+            <span>+30m</span>
+            <span>+1.0h</span>
+            <span>+1.5h</span>
+            <span>+2.0h</span>
+            <span>+2.5h</span>
+            <span>+3.0h</span>
+          </div>
+        </div>
+        <div class="player-controls">
+          <button id="btnPlayTimeline" class="btn-control"><i class="fa-solid fa-play"></i> Play Sequence</button>
+          <span class="timestamp-label" id="forecastTimestamp">--:-- IST</span>
+        </div>
+      </div>
+
+      <!-- Multi-Hazard Layer Selector -->
+      <div class="card layers-card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-layer-group"></i> Multi-Task Hazard Layers</h3>
+        </div>
+        <div class="layer-options">
+          <label class="layer-radio active" data-layer="cloudburst">
+            <input type="radio" name="hazardLayer" value="cloudburst" checked>
+            <span class="hazard-indicator red"></span>
+            <div class="layer-info">
+              <strong>Cloudburst Risk Map</strong>
+              <small>IWV moisture surge + rapid CTT drop (>100mm/hr)</small>
+            </div>
+          </label>
+
+          <label class="layer-radio" data-layer="flash_flood">
+            <input type="radio" name="hazardLayer" value="flash_flood">
+            <span class="hazard-indicator cyan"></span>
+            <div class="layer-info">
+              <strong>Flash Flood Inundation</strong>
+              <small>Topography & slope runoff channeling index</small>
+            </div>
+          </label>
+
+          <label class="layer-radio" data-layer="thunderstorm">
+            <input type="radio" name="hazardLayer" value="thunderstorm">
+            <span class="hazard-indicator yellow"></span>
+            <div class="layer-info">
+              <strong>Severe Thunderstorm</strong>
+              <small>CAPE instability + wind shear + updraft</small>
+            </div>
+          </label>
+
+          <label class="layer-radio" data-layer="sat_iwv">
+            <input type="radio" name="hazardLayer" value="sat_iwv">
+            <span class="hazard-indicator purple"></span>
+            <div class="layer-info">
+              <strong>Satellite IWV Fuel Layer</strong>
+              <span class="tag-insat">INSAT-3D/3DR WV</span>
+            </div>
+          </label>
+
+          <label class="layer-radio" data-layer="dem_slope">
+            <input type="radio" name="hazardLayer" value="dem_slope">
+            <span class="hazard-indicator green"></span>
+            <div class="layer-info">
+              <strong>DEM Terrain & Drainage</strong>
+              <span class="tag-insat">ISRO CartoDEM 30m</span>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Atmospheric Precursor Metrics -->
+      <div class="card telemetry-card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-gauge-high"></i> Atmospheric Precursors</h3>
+        </div>
+        <div class="metric-grid">
+          <div class="metric-box">
+            <span class="metric-title">IWV Moisture Pool</span>
+            <span class="metric-val" id="metricIWV">62.4 mm</span>
+            <div class="trend positive"><i class="fa-solid fa-arrow-up"></i> +28% Surge</div>
+          </div>
+          <div class="metric-box">
+            <span class="metric-title">CTT Cooling Rate</span>
+            <span class="metric-val text-red" id="metricCTT">-34°C/hr</span>
+            <div class="trend text-red"><i class="fa-solid fa-bolt"></i> Violent Updraft</div>
+          </div>
+          <div class="metric-box">
+            <span class="metric-title">CAPE Instability</span>
+            <span class="metric-val" id="metricCAPE">2,850 J/kg</span>
+            <div class="trend positive">Extreme Buoyancy</div>
+          </div>
+          <div class="metric-box">
+            <span class="metric-title">Inference Speed</span>
+            <span class="metric-val text-green">14.2 ms</span>
+            <div class="trend text-green">Real-time edge</div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Center: Interactive GIS Map Canvas -->
+    <main class="map-view-container">
+      <div id="map"></div>
+      
+      <!-- Floating Map Legend -->
+      <div class="map-legend">
+        <div class="legend-header">Risk Severity Level</div>
+        <div class="legend-bar">
+          <span class="leg-stop" style="background:#10b981;">&lt;30% Low</span>
+          <span class="leg-stop" style="background:#f59e0b;">30-50% Watch</span>
+          <span class="leg-stop" style="background:#f97316;">50-75% Warning</span>
+          <span class="leg-stop" style="background:#ef4444;">&gt;75% Critical</span>
+        </div>
+      </div>
+
+      <!-- Map Overlay Banner (Click hint) -->
+      <div class="map-hint-banner">
+        <i class="fa-solid fa-hand-pointer"></i> Click any hotspot on the map to trigger <strong>Explainable AI (XAI)</strong> meteorological breakdown
+      </div>
+    </main>
+
+    <!-- Right Sidebar: Real-Time Early Warnings & SOPs -->
+    <aside class="sidebar-right">
+      <div class="card alerts-panel">
+        <div class="card-header alert-header-accent">
+          <h3><i class="fa-solid fa-bullhorn"></i> Actionable Early Warnings</h3>
+          <span class="badge-live" id="activeAlertCount">0 Alerts</span>
+        </div>
+        
+        <div class="alert-feed" id="alertFeedContainer">
+          <!-- Dynamic Alert Cards rendered here -->
+          <div class="loading-spinner"><i class="fa-solid fa-spinner fa-spin"></i> Loading live alert matrix...</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Explainable AI (XAI) Modal Drawer -->
+  <div class="xai-modal-overlay" id="xaiModal">
+    <div class="xai-modal-content">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <span class="tag-xai">EXPLAINABLE AI (XAI) ATTRIBUTION</span>
+          <h2 id="xaiLocationTitle">Mandi - Beas Valley, Himachal Pradesh</h2>
+          <p id="xaiSubCoords">Coordinates: 31.70°N, 76.93°E | Lead Time: +1.5h</p>
+        </div>
+        <button class="btn-close-modal" id="btnCloseXai">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="xai-threat-banner" id="xaiThreatBanner">
+          <div class="threat-score">
+            <span class="big-score" id="xaiPeakProb">88%</span>
+            <span>CLOUDBURST RISK</span>
+          </div>
+          <div class="threat-rationale">
+            <strong>Meteorological Rationale:</strong>
+            <p id="xaiRationaleText">Severe moisture convergence detected via INSAT IWV paired with rapid cloud-top cooling and steep valley runoff channeling.</p>
+          </div>
+        </div>
+
+        <div class="xai-breakdown-section">
+          <h3>Atmospheric Trigger Attribution</h3>
+          <div class="trigger-bar-group">
+            <div class="trigger-item">
+              <div class="trigger-label">
+                <span><i class="fa-solid fa-droplet text-blue"></i> Moisture Availability (IWV Surging)</span>
+                <strong id="xaiMoisturePct">42.5%</strong>
+              </div>
+              <div class="progress-track"><div class="progress-fill bg-blue" id="xaiMoistureBar" style="width: 42%;"></div></div>
+            </div>
+
+            <div class="trigger-item">
+              <div class="trigger-label">
+                <span><i class="fa-solid fa-bolt text-yellow"></i> Atmospheric Instability (CAPE / Eroded CIN)</span>
+                <strong id="xaiInstabilityPct">26.1%</strong>
+              </div>
+              <div class="progress-track"><div class="progress-fill bg-yellow" id="xaiInstabilityBar" style="width: 26%;"></div></div>
+            </div>
+
+            <div class="trigger-item">
+              <div class="trigger-label">
+                <span><i class="fa-solid fa-cloud-arrow-up text-red"></i> Updraft Lift (Rapid CTT Drop Rate)</span>
+                <strong id="xaiLiftPct">18.4%</strong>
+              </div>
+              <div class="progress-track"><div class="progress-fill bg-red" id="xaiLiftBar" style="width: 18%;"></div></div>
+            </div>
+
+            <div class="trigger-item">
+              <div class="trigger-label">
+                <span><i class="fa-solid fa-mountain text-green"></i> Topographic Channeling (Slope & Runoff)</span>
+                <strong id="xaiTopoPct">13.0%</strong>
+              </div>
+              <div class="progress-track"><div class="progress-fill bg-green" id="xaiTopoBar" style="width: 13%;"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="xai-diagnostics-table">
+          <h3>Raw Diagnostic Telemetry</h3>
+          <div class="diag-grid">
+            <div class="diag-card"><small>CTT Drop Speed</small><strong id="diagCTT">-28.4 °C/hr</strong></div>
+            <div class="diag-card"><small>Integrated Water Vapor</small><strong id="diagIWV">64.1 mm</strong></div>
+            <div class="diag-card"><small>CAPE Convective Energy</small><strong id="diagCAPE">2,920 J/kg</strong></div>
+            <div class="diag-card"><small>Terrain Slope</small><strong id="diagSlope">38.2°</strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script src="app.js"></script>
+</body>
+</html>

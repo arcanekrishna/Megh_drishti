@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>MEGH-DRISHTI: AI Model Architecture Animated Video Prototype</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    @keyframes pulseGlow {
+      0%, 100% { filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.7)); }
+      50% { filter: drop-shadow(0 0 24px rgba(239, 68, 68, 0.9)); }
+    }
+    @keyframes dashMove {
+      to { stroke-dashoffset: -40; }
+    }
+    .tensor-pipe {
+      stroke-dasharray: 8, 8;
+      animation: dashMove 1.5s linear infinite;
+    }
+    .neon-border {
+      box-shadow: 0 0 20px rgba(59, 130, 246, 0.25), inset 0 0 15px rgba(0, 0, 0, 0.5);
+    }
+  </style>
+</head>
+<body class="bg-transparent text-[var(--foreground)] antialiased p-3">
+  <!-- Video Player Wrapper -->
+  <div class="bg-slate-950 text-slate-100 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl max-w-5xl mx-auto neon-border">
+    
+    <!-- Top Video Bar -->
+    <div class="bg-slate-900/90 border-b border-slate-800 px-5 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-red-600 text-white font-bold shadow-lg shadow-red-500/30">
+          <i class="fa-solid fa-play text-xs"></i>
+        </span>
+        <div>
+          <h1 class="text-sm font-bold tracking-wide text-white flex items-center gap-2">
+            MEGH-DRISHTI: AI MODEL ARCHITECTURE & NOWCASTING CORE
+            <span class="bg-blue-600/30 text-blue-400 text-[10px] px-2 py-0.5 rounded border border-blue-500/40">SIH 2026 PROTOTYPE</span>
+          </h1>
+          <p class="text-xs text-slate-400">Interactive Animated Video Walkthrough • 2 to 6-Hour Convective Early Warning</p>
+        </div>
+      </div>
+      
+      <!-- Scene Badge & Time -->
+      <div class="flex items-center gap-4 text-xs font-mono">
+        <span class="bg-slate-800 text-slate-300 px-3 py-1 rounded-md border border-slate-700" id="sceneIndicator">
+          SCENE 1 / 5
+        </span>
+        <span class="text-blue-400 font-bold" id="timeCode">00:00 / 02:30</span>
+      </div>
+    </div>
+
+    <!-- Main Video Screen (Canvas + Dynamic Graphic Stage) -->
+    <div class="relative w-full aspect-video bg-slate-950 flex flex-col justify-between overflow-hidden" id="videoViewport">
+      <!-- 60 FPS HTML5 Animation Canvas -->
+      <canvas id="animCanvas" class="absolute inset-0 w-full h-full pointer-events-none z-0"></canvas>
+
+      <!-- Dynamic Scene HUD / Stage Overlay -->
+      <div class="relative z-10 p-6 flex flex-col justify-between h-full pointer-events-none">
+        <!-- Scene Header -->
+        <div class="flex justify-between items-start">
+          <div class="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-lg p-3 max-w-md shadow-lg">
+            <span class="text-[10px] font-bold tracking-wider text-blue-400 uppercase" id="stagePreTitle">Atmospheric Ingestion</span>
+            <h2 class="text-base font-bold text-white mt-0.5" id="stageTitle">1. Multi-Modal Data Fusion & 4D Tensor Construction</h2>
+          </div>
+
+          <!-- Dynamic Metric HUD -->
+          <div class="bg-slate-900/80 backdrop-blur border border-slate-800 rounded-lg p-3 text-right font-mono text-xs shadow-lg" id="hudMetrics">
+            <div class="text-slate-400 text-[10px]">TENSOR SHAPE:</div>
+            <div class="text-emerald-400 font-bold text-sm" id="hudShape">(Batch, T=6, C=10, 100, 100)</div>
+            <div class="text-slate-400 text-[10px] mt-1">LATENCY: <span class="text-blue-400 font-bold" id="hudLatency">0.25 ms</span></div>
+          </div>
+        </div>
+
+        <!-- Center Diagram / Concept Showcase (Managed by JS) -->
+        <div class="flex items-center justify-center my-auto transition-all duration-500" id="centerStage">
+          <!-- Dynamically populated per scene -->
+        </div>
+
+        <!-- Voiceover Subtitle Strip -->
+        <div class="bg-slate-900/90 backdrop-blur border border-slate-800 rounded-xl p-4 shadow-xl pointer-events-auto">
+          <div class="flex items-start gap-3">
+            <div class="w-2 h-2 rounded-full bg-red-500 animate-ping mt-1.5 flex-shrink-0"></div>
+            <p class="text-sm text-slate-200 leading-relaxed font-sans" id="narrationText">
+              Initializing the MEGH-DRISHTI Spatiotemporal Deep Learning Engine. Traditional NWP physics models take 3 to 4 hours to run, missing rapid cloudbursts. Our engine bypasses thermodynamic simulations with real-time tensor recognition.
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Video Controls & Timeline Scrub Bar -->
+    <div class="bg-slate-900 border-t border-slate-800 p-4 flex flex-col gap-3">
+      <!-- Progress Bar & Scene Anchors -->
+      <div class="relative w-full h-2.5 bg-slate-800 rounded-full cursor-pointer overflow-hidden" id="progressBarContainer">
+        <div class="h-full bg-gradient-to-r from-blue-500 via-indigo-500 to-red-500 transition-all duration-100" id="progressBar" style="width: 0%;"></div>
+      </div>
+
+      <!-- Controls Row -->
+      <div class="flex items-center justify-between">
+        <!-- Play / Pause / Skip -->
+        <div class="flex items-center gap-3">
+          <button id="btnPlay" class="w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center transition shadow-md shadow-blue-600/30">
+            <i class="fa-solid fa-play" id="playIcon"></i>
+          </button>
+          <button id="btnPrevScene" class="p-2 text-slate-400 hover:text-white transition" title="Previous Scene">
+            <i class="fa-solid fa-backward-step"></i>
+          </button>
+          <button id="btnNextScene" class="p-2 text-slate-400 hover:text-white transition" title="Next Scene">
+            <i class="fa-solid fa-forward-step"></i>
+          </button>
+          <button id="btnRestart" class="p-2 text-slate-400 hover:text-white transition" title="Restart Video">
+            <i class="fa-solid fa-rotate-left"></i>
+          </button>
+        </div>
+
+        <!-- Scene Jump Buttons -->
+        <div class="hidden md:flex items-center gap-1.5 text-xs font-medium">
+          <button class="scene-btn px-2.5 py-1 rounded bg-blue-600 text-white" data-scene="0">1. Precursors</button>
+          <button class="scene-btn px-2.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-white" data-scene="1">2. Fusion Tensor</button>
+          <button class="scene-btn px-2.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-white" data-scene="2">3. Shared Backbone</button>
+          <button class="scene-btn px-2.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-white" data-scene="3">4. Multi-Task Heads</button>
+          <button class="scene-btn px-2.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-white" data-scene="4">5. XAI & Accuracy</button>
+        </div>
+
+        <!-- Speed & Fullscreen -->
+        <div class="flex items-center gap-2 text-xs">
+          <label class="text-slate-400">Speed:</label>
+          <select id="speedSelect" class="bg-slate-800 border border-slate-700 text-slate-200 rounded px-2 py-1 outline-none">
+            <option value="0.75">0.75x</option>
+            <option value="1.0" selected>1.0x</option>
+            <option value="1.5">1.5x</option>
+            <option value="2.0">2.0x</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Interactive Player Script -->
+  <script>
+    const canvas = document.getElementById('animCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Resize Canvas
+    function resizeCanvas() {
+      const rect = document.getElementById('videoViewport').getBoundingClientRect();
+      canvas.width = rect.width;
+      canvas.height = rect.height;
+    }
+    window.addEventListener('resize', resizeCanvas);
+    resizeCanvas();
+
+    // Scene Script & Narration Data
+    const SCENES = [
+      {
+        id: 0,
+        title: "1. The 3 Convective Precursors (Moisture, Instability, Lift)",
+        preTitle: "ATMOSPHERIC PRECURSOR INGESTION",
+        duration: 30, // seconds
+        shape: "(120, 10, 100, 100)",
+        latency: "14.2 ms ingest",
+        narration: "Severe convective storms demand three ingredients: Moisture availability (the fuel), Atmospheric Instability (the energy), and Kinematic Lift (the trigger). We track real-time INSAT-3D/3DR Water Vapor pooling, CTT drop rates, and IMDAA CAPE/CIN erosion.",
+        render: (t) => renderScene1(t)
+      },
+      {
+        id: 1,
+        title: "2. Spatiotemporal Alignment & 5D Tensor Construction",
+        preTitle: "MULTI-MODAL DATA FUSION",
+        duration: 30,
+        shape: "(Batch, Past_Steps=6, Channels=10, 100, 100)",
+        latency: "0.25 ms fusion",
+        narration: "The MultimodalWeatherFusionEngine harmonizes heterogeneous satellite grids, atmospheric reanalysis, and static CartoDEM 30m topography onto a unified 0.04° grid. Sliding windows create supervised (X, Y) sequence pairs spanning past precursors to future nowcasting windows.",
+        render: (t) => renderScene2(t)
+      },
+      {
+        id: 2,
+        title: "3. Shared Spatiotemporal Backbone & Spatial Attention",
+        preTitle: "DEEP LEARNING NEURAL CORE",
+        duration: 35,
+        shape: "Latent Repr: (Batch, 128, 100, 100)",
+        latency: "0.25 ms inference",
+        narration: "The shared Spatiotemporal Residual ConvNet compresses time and channel dimensions simultaneously. A spatial self-attention gate detects rapid anomaly surges—multiplying attention weights over concentrated moisture pools and violent updraft cooling zones.",
+        render: (t) => renderScene3(t)
+      },
+      {
+        id: 3,
+        title: "4. Multi-Task Learning (MTL) Branching Heads",
+        preTitle: "SIMULTANEOUS HAZARD NOWCASTING",
+        duration: 35,
+        shape: "Outputs: 3x (Batch, Steps=6, 100, 100)",
+        latency: "2 to 6h Lead Time",
+        narration: "A single unified model branches into 3 dedicated task heads. Head 1 generates Severe Thunderstorm probability maps. Head 2 detects localized Cloudburst hotspots (>100mm/hr). Head 3 couples rainfall with DEM slope and runoff drainage to predict downstream Flash Floods.",
+        render: (t) => renderScene4(t)
+      },
+      {
+        id: 4,
+        title: "5. Explainable AI (XAI) Attribution & Contingency Accuracy",
+        preTitle: "DISASTER COMMAND & VERIFICATION",
+        duration: 30,
+        shape: "POD: 84% | FAR: 19% | CSI: 0.71",
+        latency: "900,000x faster than WRF",
+        narration: "To ensure actionable trust for NDMA commanders, the XAI engine breaks down every alert into 4 physical percentages: Moisture (IWV), Instability (CAPE), Updraft Lift (CTT drop), and Topography (Slope). Contingency benchmarks prove 84% POD with only 19% FAR.",
+        render: (t) => renderScene5(t)
+      }
+    ];
+
+    // Playback State
+    let currentSceneIdx = 0;
+    let sceneProgress = 0; // 0 to 1
+    let isPlaying = true;
+    let playbackSpeed = 1.0;
+    let totalElapsedSeconds = 0;
+    const totalVideoSeconds = SCENES.reduce((acc, s) => acc + s.duration, 0);
+
+    // Canvas Particles
+    const particles = Array.from({ length: 70 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      vx: (Math.random() - 0.5) * 0.003,
+      vy: (Math.random() - 0.5) * 0.003,
+      size: Math.random() * 3 + 1,
+      color: ['#3b82f6', '#06b6d4', '#ef4444', '#f59e0b', '#10b981'][Math.floor(Math.random() * 5)]
+    }));
+
+    // Animation Loop
+    let lastTimestamp = performance.now();
+    function animate(now) {
+      const dt = (now - lastTimestamp) / 1000;
+      lastTimestamp = now;
+
+      if (isPlaying) {
+        sceneProgress += (dt * playbackSpeed) / SCENES[currentSceneIdx].duration;
+        totalElapsedSeconds += dt * playbackSpeed;
+
+        if (sceneProgress >= 1.0) {
+          sceneProgress = 0;
+          currentSceneIdx = (currentSceneIdx + 1) % SCENES.length;
+          updateSceneUI();
+        }
+        updateProgressBar();
+      }
+
+      // Clear & Draw
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBackgroundGrid();
+      SCENES[currentSceneIdx].render(sceneProgress);
+
+      requestAnimationFrame(animate);
+    }
+
+    // Background Grid & Floating Particles
+    function drawBackgroundGrid() {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.04)';
+      ctx.lineWidth = 1;
+      const step = 40;
+      for (let x = 0; x < canvas.width; x += step) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += step) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
+      }
+
+      // Draw floating particles
+      particles.forEach(p => {
+        p.x += p.vx * playbackSpeed;
+        p.y += p.vy * playbackSpeed;
+        if (p.x < 0) p.x = 1; if (p.x > 1) p.x = 0;
+        if (p.y < 0) p.y = 1; if (p.y > 1) p.y = 0;
+
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x * canvas.width, p.y * canvas.height, p.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    // --- SCENE 1: ATMOSPHERIC PRECURSORS ---
+    function renderScene1(t) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      // Draw 3 Atmospheric Ingredient Nodes (Moisture, Instability, Lift)
+      const nodes = [
+        { label: "MOISTURE (IWV)", sub: "INSAT-3DR WV 6.8µm", color: "#3b82f6", x: cx - 220, y: cy - 40 },
+        { label: "INSTABILITY (CAPE)", sub: "IMDAA Thermodynamic Buoyancy", color: "#f59e0b", x: cx, y: cy - 90 },
+        { label: "LIFT (CTT DROP)", sub: "Explosive Cooling Anvil Rate", color: "#ef4444", x: cx + 220, y: cy - 40 }
+      ];
+
+      nodes.forEach((n, idx) => {
+        const pulse = 1.0 + 0.08 * Math.sin(t * 12 + idx * 2);
+        // Outer glow
+        ctx.save();
+        ctx.fillStyle = n.color + '15';
+        ctx.strokeStyle = n.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 65 * pulse, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Node text
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 12px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(n.label, n.x, n.y - 4);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '9px monospace';
+        ctx.fillText(n.sub, n.x, n.y + 12);
+
+        // Particle stream from each node towards the central fusion core
+        const streamX = n.x + (cx - n.x) * ((t * 2 + idx * 0.3) % 1);
+        const streamY = n.y + (cy + 70 - n.y) * ((t * 2 + idx * 0.3) % 1);
+        ctx.fillStyle = n.color;
+        ctx.beginPath();
+        ctx.arc(streamX, streamY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      });
+
+      // Central Fusion Receptor
+      ctx.save();
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(cx - 110, cy + 30, 220, 60);
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.15)';
+      ctx.fillRect(cx - 110, cy + 30, 220, 60);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText("SPATIOTEMPORAL FUSION", cx, cy + 55);
+      ctx.fillStyle = '#6ee7b7';
+      ctx.font = '10px monospace';
+      ctx.fillText("Grid: 0.04° (~4km) over Himalayas", cx, cy + 72);
+      ctx.restore();
+    }
+
+    // --- SCENE 2: 4D/5D TENSOR PIPELINE ---
+    function renderScene2(t) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      ctx.save();
+      // Draw 3D Isometric Tensor Blocks sliding in time
+      const numFrames = 6;
+      for (let i = 0; i < numFrames; i++) {
+        const offsetX = (i - 2.5) * 55;
+        const offsetY = (i - 2.5) * 12;
+        const isCurrent = i === Math.floor(t * numFrames);
+
+        ctx.fillStyle = isCurrent ? 'rgba(59, 130, 246, 0.4)' : 'rgba(30, 41, 59, 0.6)';
+        ctx.strokeStyle = isCurrent ? '#60a5fa' : '#475569';
+        ctx.lineWidth = isCurrent ? 2.5 : 1;
+
+        // Draw isometric tile
+        ctx.beginPath();
+        ctx.moveTo(cx + offsetX, cy - 40 + offsetY);
+        ctx.lineTo(cx + offsetX + 35, cy - 60 + offsetY);
+        ctx.lineTo(cx + offsetX + 35, cy + 20 + offsetY);
+        ctx.lineTo(cx + offsetX, cy + 40 + offsetY);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Label
+        ctx.fillStyle = isCurrent ? '#ffffff' : '#64748b';
+        ctx.font = '10px monospace';
+        ctx.fillText(`T-${numFrames - i} (30m)`, cx + offsetX - 15, cy + 60 + offsetY);
+      }
+
+      // Tensor Specs Tag
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText("Tensor X: [Batch, Time=6 frames, Channels=10, Lat=100, Lon=100]", cx, cy - 90);
+      ctx.fillStyle = '#94a3b8';
+      ctx.font = '11px sans-serif';
+      ctx.fillText("10 Channels: CTT, IWV, QPE, CAPE, CIN, Shear, Total_IWV, Elev, Slope, Runoff", cx, cy - 70);
+      ctx.restore();
+    }
+
+    // --- SCENE 3: SHARED BACKBONE & ATTENTION ---
+    function renderScene3(t) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      ctx.save();
+      // Neural network block layers
+      const layers = [
+        { name: "Conv2D (10x6 -> 64)", width: 140, height: 90, x: cx - 220, color: "#3b82f6" },
+        { name: "ResBlock 1 (64 -> 128)", width: 120, height: 110, x: cx - 50, color: "#6366f1" },
+        { name: "ResBlock 2 (128 -> 128)", width: 120, height: 110, x: cx + 110, color: "#8b5cf6" },
+        { name: "Spatial Attention Gate", width: 150, height: 80, x: cx + 270, color: "#ec4899" }
+      ];
+
+      layers.forEach((l, idx) => {
+        ctx.fillStyle = l.color + '22';
+        ctx.strokeStyle = l.color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(l.x - l.width / 2, cy - l.height / 2, l.width, l.height);
+        ctx.fillRect(l.x - l.width / 2, cy - l.height / 2, l.width, l.height);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(l.name, l.x, cy);
+
+        // Draw connecting arrows
+        if (idx < layers.length - 1) {
+          const nextX = layers[idx + 1].x - layers[idx + 1].width / 2;
+          const currX = l.x + l.width / 2;
+          ctx.strokeStyle = '#64748b';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(currX, cy);
+          ctx.lineTo(nextX, cy);
+          ctx.stroke();
+
+          // Flowing pulse dot
+          const px = currX + (nextX - currX) * ((t * 3 + idx * 0.25) % 1);
+          ctx.fillStyle = '#38bdf8';
+          ctx.beginPath();
+          ctx.arc(px, cy, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+
+      // Pulsing Attention heat circle on the right
+      const pulse = 1.0 + 0.2 * Math.sin(t * 15);
+      ctx.strokeStyle = '#f43f5e';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx + 270, cy + 60, 18 * pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#fda4af';
+      ctx.font = '9px monospace';
+      ctx.fillText("Attention Hotspot", cx + 270, cy + 90);
+      ctx.restore();
+    }
+
+    // --- SCENE 4: MULTI-TASK BRANCHING HEADS ---
+    function renderScene4(t) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      ctx.save();
+      // Shared Backbone Node on Left
+      ctx.fillStyle = 'rgba(99, 102, 241, 0.2)';
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cx - 280, cy - 50, 140, 100);
+      ctx.fillRect(cx - 280, cy - 50, 140, 100);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 12px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText("SHARED", cx - 210, cy - 10);
+      ctx.fillText("SPATIOTEMPORAL", cx - 210, cy + 8);
+      ctx.fillText("BACKBONE", cx - 210, cy + 26);
+
+      // 3 Dedicated Output Heads on Right
+      const heads = [
+        { title: "HEAD 1: SEVERE THUNDERSTORM", sub: "Sigmoid (CAPE + CTT Drop + Shear)", color: "#f59e0b", y: cy - 80 },
+        { title: "HEAD 2: CLOUDBURST RISK MAP", sub: "Sigmoid (IWV Surge + Updraft >100mm/hr)", color: "#ef4444", y: cy },
+        { title: "HEAD 3: FLASH FLOOD INUNDATION", sub: "Coupled: Cloudburst + DEM Slope/Drainage", color: "#06b6d4", y: cy + 80 }
+      ];
+
+      heads.forEach((h, idx) => {
+        // Curved branch pipe
+        ctx.strokeStyle = h.color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(cx - 140, cy);
+        ctx.bezierCurveTo(cx - 50, cy, cx - 50, h.y, cx + 40, h.y);
+        ctx.stroke();
+
+        // Pulsing flow packet
+        const progress = (t * 2 + idx * 0.33) % 1;
+        const bx = cx - 140 + (cx + 40 - (cx - 140)) * progress;
+        const by = cy + (h.y - cy) * progress;
+        ctx.fillStyle = h.color;
+        ctx.beginPath(); ctx.arc(bx, by, 4, 0, Math.PI * 2); ctx.fill();
+
+        // Head Box
+        ctx.fillStyle = h.color + '20';
+        ctx.strokeStyle = h.color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cx + 40, h.y - 25, 250, 50);
+        ctx.fillRect(cx + 40, h.y - 25, 250, 50);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px Inter, sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(h.title, cx + 55, h.y - 5);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '9px monospace';
+        ctx.fillText(h.sub, cx + 55, h.y + 12);
+      });
+      ctx.restore();
+    }
+
+    // --- SCENE 5: XAI ATTRIBUTION & BENCHMARKS ---
+    function renderScene5(t) {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+
+      ctx.save();
+      // Left: XAI 4-Ingredient Breakdown Radar Bar
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px Inter, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText("EXPLAINABLE AI (XAI) ATTRIBUTION", cx - 280, cy - 85);
+
+      const triggers = [
+        { name: "Moisture Availability (IWV)", pct: 42, color: "#3b82f6" },
+        { name: "Atmospheric Instability (CAPE)", pct: 26, color: "#f59e0b" },
+        { name: "Updraft Lift (CTT Drop Rate)", pct: 19, color: "#ef4444" },
+        { name: "Topographic Slope & Runoff", pct: 13, color: "#10b981" }
+      ];
+
+      triggers.forEach((tr, idx) => {
+        const y = cy - 55 + idx * 36;
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '11px sans-serif';
+        ctx.fillText(tr.name, cx - 280, y);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`${tr.pct}%`, cx - 30, y);
+
+        // Progress Bar
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+        ctx.fillRect(cx - 280, y + 6, 250, 6);
+        ctx.fillStyle = tr.color;
+        ctx.fillRect(cx - 280, y + 6, 250 * (tr.pct / 100), 6);
+      });
+
+      // Right: Benchmark Comparison Table
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 13px Inter, sans-serif';
+      ctx.fillText("QUANTITATIVE VERIFICATION", cx + 50, cy - 85);
+
+      const bench = [
+        { metric: "Inference Latency", nwp: "3.5 Hours", ai: "0.25 ms (900k x faster)", color: "#10b981" },
+        { metric: "POD (Detection Rate)", nwp: "58%", ai: "84% (+44.8% gain)", color: "#38bdf8" },
+        { metric: "FAR (False Alarm)", nwp: "46%", ai: "19% (58% reduction)", color: "#f43f5e" },
+        { metric: "CSI (Threat Score)", nwp: "0.38", ai: "0.71 (+86.8% gain)", color: "#a855f7" }
+      ];
+
+      bench.forEach((b, idx) => {
+        const y = cy - 55 + idx * 36;
+        ctx.fillStyle = '#cbd5e1';
+        ctx.font = '11px sans-serif';
+        ctx.fillText(b.metric, cx + 50, y);
+        ctx.fillStyle = '#64748b';
+        ctx.font = '10px monospace';
+        ctx.fillText(`WRF: ${b.nwp}`, cx + 50, y + 14);
+        ctx.fillStyle = b.color;
+        ctx.font = 'bold 11px monospace';
+        ctx.fillText(`AI: ${b.ai}`, cx + 150, y + 14);
+      });
+      ctx.restore();
+    }
+
+    // --- UI CONTROLS & TIMELINE SYNC ---
+    function updateSceneUI() {
+      const s = SCENES[currentSceneIdx];
+      document.getElementById('sceneIndicator').textContent = `SCENE ${s.id + 1} / ${SCENES.length}`;
+      document.getElementById('stagePreTitle').textContent = s.preTitle;
+      document.getElementById('stageTitle').textContent = s.title;
+      document.getElementById('narrationText').textContent = s.narration;
+      document.getElementById('hudShape').textContent = s.shape;
+      document.getElementById('hudLatency').textContent = s.latency;
+
+      // Update Scene Buttons
+      document.querySelectorAll('.scene-btn').forEach((btn, idx) => {
+        if (idx === currentSceneIdx) {
+          btn.className = 'scene-btn px-2.5 py-1 rounded bg-blue-600 text-white';
+        } else {
+          btn.className = 'scene-btn px-2.5 py-1 rounded bg-slate-800 text-slate-400 hover:text-white';
+        }
+      });
+    }
+
+    function updateProgressBar() {
+      // Calculate overall progress across entire video
+      let elapsedBefore = 0;
+      for (let i = 0; i < currentSceneIdx; i++) {
+        elapsedBefore += SCENES[i].duration;
+      }
+      const currentSceneElapsed = sceneProgress * SCENES[currentSceneIdx].duration;
+      const totalElapsed = elapsedBefore + currentSceneElapsed;
+      const pct = Math.min(100, (totalElapsed / totalVideoSeconds) * 100);
+
+      document.getElementById('progressBar').style.width = `${pct}%`;
+
+      const m = Math.floor(totalElapsed / 60).toString().padStart(2, '0');
+      const sec = Math.floor(totalElapsed % 60).toString().padStart(2, '0');
+      const totalM = Math.floor(totalVideoSeconds / 60).toString().padStart(2, '0');
+      const totalSec = Math.floor(totalVideoSeconds % 60).toString().padStart(2, '0');
+      document.getElementById('timeCode').textContent = `${m}:${sec} / ${totalM}:${totalSec}`;
+    }
+
+    // Button Listeners
+    document.getElementById('btnPlay').addEventListener('click', () => {
+      isPlaying = !isPlaying;
+      document.getElementById('playIcon').className = isPlaying ? 'fa-solid fa-pause' : 'fa-solid fa-play';
+    });
+
+    document.getElementById('btnPrevScene').addEventListener('click', () => {
+      currentSceneIdx = (currentSceneIdx - 1 + SCENES.length) % SCENES.length;
+      sceneProgress = 0;
+      updateSceneUI();
+    });
+
+    document.getElementById('btnNextScene').addEventListener('click', () => {
+      currentSceneIdx = (currentSceneIdx + 1) % SCENES.length;
+      sceneProgress = 0;
+      updateSceneUI();
+    });
+
+    document.getElementById('btnRestart').addEventListener('click', () => {
+      currentSceneIdx = 0;
+      sceneProgress = 0;
+      totalElapsedSeconds = 0;
+      updateSceneUI();
+    });
+
+    document.getElementById('speedSelect').addEventListener('change', (e) => {
+      playbackSpeed = parseFloat(e.target.value);
+    });
+
+    document.querySelectorAll('.scene-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentSceneIdx = parseInt(btn.getAttribute('data-scene'));
+        sceneProgress = 0;
+        updateSceneUI();
+      });
+    });
+
+    document.getElementById('progressBarContainer').addEventListener('click', (e) => {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const targetPct = clickX / rect.width;
+      const targetSeconds = targetPct * totalVideoSeconds;
+
+      // Find scene for this time
+      let accumulated = 0;
+      for (let i = 0; i < SCENES.length; i++) {
+        if (targetSeconds <= accumulated + SCENES[i].duration || i === SCENES.length - 1) {
+          currentSceneIdx = i;
+          sceneProgress = (targetSeconds - accumulated) / SCENES[i].duration;
+          break;
+        }
+        accumulated += SCENES[i].duration;
+      }
+      updateSceneUI();
+    });
+
+    // Start
+    updateSceneUI();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>

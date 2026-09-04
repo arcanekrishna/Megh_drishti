@@ -1,0 +1,17 @@
+INFO:     Started server process [16694]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 48] error while attempting to bind on address ('0.0.0.0', 8000): [errno 48] address already in use
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+[✓] Loaded trained model weights from /Users/krishnagupta/Documents/anti_project/algorithms & their analogy/disasterr/models/checkpoints/model_best.pth
+[*] Fetching LIVE real-time meteorological data...
+[✓] Live inference complete. Active Alerts: 0
+===========================================================================
+⛈️  MEGH-DRISHTI: AI-Driven Hyper-Local Weather Nowcasting Engine (SIH 2026)
+===========================================================================
+[+] Initialized Multi-Task Model (Thunderstorm, Cloudburst, Flash Flood)
+[+] Initialized Explainable AI (XAI) Trigger Attribution Module
+[+] Initialized Automated Alerting & SOP Dispatcher
+[+] Starting Live Command-Center Web Dashboard on: http://localhost:8000
+===========================================================================
