@@ -1,0 +1,14 @@
+{
+  "channels": {
+    "ctt":           {"min": 190, "max": 320, "unit": "K"},
+    "iwv":           {"min": 0,   "max": 80,  "unit": "kg/m²"},
+    "precipitation": {"min": 0,   "max": 150, "unit": "mm/hr"},
+    "cape":          {"min": 0,   "max": 5000, "unit": "J/kg"},
+    "cin":           {"min": 0,   "max": 500,  "unit": "J/kg"},
+    "wind_shear":    {"min": 0,   "max": 50,   "unit": "m/s"},
+    "wv_channel":    {"min": 200, "max": 260,  "unit": "K"},
+    "elevation":     {"min": 0,   "max": 8500, "unit": "m"},
+    "slope":         {"min": 0,   "max": 60,   "unit": "degrees"},
+    "runoff":        {"min": 0,   "max": 1,    "unit": "index"}
+  }
+}

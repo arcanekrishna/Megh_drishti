@@ -27,9 +27,9 @@ flowchart TB
     end
 
     subgraph AI_Core [Pillar 2: Spatiotemporal Multi-Task AI Core]
-        D["Unified Spatiotemporal Tensor\n(Batch, Time=6, Channels=10, H, W)"] --> E["Shared Spatiotemporal Backbone\n(Residual ConvNet / ConvLSTM Encoder)"]
+        D["Unified Spatiotemporal Tensor\n(Batch, Time=6, Channels=10, H, W)"] --> E["Temporal Encoder (ConvGRU)\n+ Spatial Residual CNN"]
         E --> F["Head 1: Severe Thunderstorm Risk Map"]
-        E --> G["Head 2: Cloudburst Probability Map (>100mm/hr)"]
+        E --> G["Head 2: Cloudburst Probability Map (>50mm/hr)"]
         E --> H["Head 3: Flash Flood Runoff & Inundation Map"]
     end
 
@@ -50,12 +50,12 @@ flowchart TB
 
 ## 📊 2. Multi-Modal Datasets & Physical Precursors
 
-| Dataset | Source | Extracted Variables | Role in Severe Weather Nowcasting |
-| :--- | :--- | :--- | :--- |
-| **1. Satellite Observations** | **INSAT-3D / 3DR** via ISRO MOSDAC | • Thermal IR (TIR1/TIR2)<br>• Water Vapor (WV 6.8µm)<br>• Hydro-Estimator (QPE) | • **CTT Drop Rate:** Updraft lift proxy. Cooling $>25^\circ C/\text{hr}$ indicates explosive convective cloud anvil growth.<br>• **IWV:** Identifies concentrated moisture pools fueling cloudbursts. |
-| **2. Atmospheric Thermodynamics** | **IMDAA Reanalysis / IMD / ERA5** | • CAPE (Energy)<br>• CIN (Cap/Inhibition)<br>• Multi-level U/V winds (850hPa, 500hPa) | • **CAPE/CIN:** Detects if the air column is buoyant enough to explode into storms.<br>• **Wind Shear & Convergence:** Predicts storm organization, tilt, and steering. |
-| **3. High-Resolution DEM** | **ISRO CartoDEM / NASA SRTM (30m)** | • Elevation ($m$)<br>• Terrain Slope ($^\circ$)<br>• Drainage accumulation basins | • **Flash Flood Catalyst:** Simulates how extreme cloudburst rainfall channels down steep mountain valleys into rivers. |
-| **4. Historical Ground Truth** | **IMD Gridded Daily Data (`imdlib`) / GPM IMERG** | • Rainfall accumulation ($mm/hr$) | • Used as ground-truth labels for training, calibration, and validation. |
+| Dataset | Source / Access Method | Role in Severe Weather Nowcasting |
+| :--- | :--- | :--- |
+| **1. Satellite Observations** | **ERA5 Cloud Base/Total Column Water (Proxy)** | • **Updraft proxy:** Cloud base height drops during convective formation.<br>• **IWV:** Identifies concentrated moisture pools fueling cloudbursts.<br>*(Note: INSAT-3D HDF5 loader is available but ERA5 provides easier bulk download for hackathon training).* |
+| **2. Atmospheric Thermodynamics** | **Copernicus ERA5 (`cdsapi`)** | • **CAPE/CIN:** Detects if the air column is buoyant enough to explode into storms.<br>• **Wind Shear:** Predicts storm organization, tilt, and steering. |
+| **3. High-Resolution DEM** | **Static Topography Maps** | • **Flash Flood Catalyst:** Simulates how extreme cloudburst rainfall channels down steep mountain valleys into rivers. |
+| **4. Historical Ground Truth** | **NASA GPM IMERG 30-min** | • **Labels:** GPM IMERG used to construct scientifically valid binary labels (e.g., >50mm/hr proxy for cloudburst). |
 
 ---
 
@@ -70,8 +70,10 @@ disasterr/
 │
 ├── models/                            # AI Model Architecture & Benchmarking
 │   ├── __init__.py
-│   ├── spatiotemporal_mtl.py          # Shared Backbone + 3 Dedicated Multi-Task Heads
-│   └── train_or_evaluate.py           # POD, FAR, CSI & NWP Latency Benchmarks
+│   ├── spatiotemporal_mtl.py          # ConvGRU Backbone + 3 Dedicated Multi-Task Heads
+│   ├── train.py                       # Physics-based training loop with proper splits
+│   ├── normalization_config.json      # Anti-leakage physical domain boundaries
+│   └── train_or_evaluate.py           # Proper held-out test evaluation suite
 │
 ├── xai/                               # Explainable AI (XAI) Attribution Engine
 │   ├── __init__.py
@@ -80,7 +82,7 @@ disasterr/
 ├── api/                               # Real-Time REST API Backend
 │   ├── __init__.py
 │   ├── alert_manager.py               # Priority Alert Dispatcher (RED/ORANGE/YELLOW) & SOPs
-│   └── server.py                      # FastAPI server endpoints
+│   └── server.py                      # FastAPI server endpoints with smart inference routing
 │
 ├── dashboard/                         # Interactive GIS Command-Center Dashboard
 │   ├── index.html                     # Responsive UI layout & Leaflet Map container
@@ -88,9 +90,9 @@ disasterr/
 │   └── app.js                         # Map controls, time-slider, layer switching & XAI modal
 │
 ├── data_loaders/                      # Multi-Modal Ingestion & Preprocessing
-│   ├── load_imd_gridded.py            # Official IMD rainfall & temperature loader
-│   ├── fetch_insat_satellite.py       # INSAT-3D/3DR reader & CTT drop calculator
-│   ├── fetch_thermodynamics.py        # CAPE, CIN, IWV & Bulk Wind Shear extractor
+│   ├── fetch_gpm_imerg.py             # Ground truth precipitation loader (labels)
+│   ├── label_generator.py             # Physics-based binary label constructor
+│   ├── fetch_real_historical.py       # Copernicus cdsapi bulk ERA5 downloader
 │   ├── fetch_dem_topography.py        # Elevation, slope & hydrological flow matrix
 │   └── fusion_pipeline.py             # Spatiotemporal Multi-modal Data Fusion Engine
 │
@@ -107,14 +109,15 @@ Run the automated evaluation benchmark:
 python -m models.train_or_evaluate
 ```
 
-| Metric | Traditional NWP (WRF 3km) | Our AI Predictive Engine | Improvement Factor |
+> **Note on Evaluation Methodology (V2 Upgrade):**
+> V2 introduces a scientifically valid ConvGRU temporal backbone and physical-boundary normalization. Performance metrics must be generated by training on actual ERA5 historical data (via `cdsapi`) and evaluating on a held-out temporal split. The dashboard currently utilizes a high-fidelity calibrated physics engine for immediate demonstration while deep learning weights are training.
+
+| Metric | Traditional NWP (WRF 3km) | Our AI Predictive Engine | Improvement |
 | :--- | :--- | :--- | :--- |
-| **Inference Latency** | 3.5 to 4.5 Hours | **14.2 Milliseconds** | **>900,000x Faster** |
+| **Inference Latency** | 3.5 to 4.5 Hours | **~15 Milliseconds** | **Orders of magnitude faster** |
 | **Lead Time to Impact** | Post-formation or <30 min | **2 to 6 Hours** | **Actionable Evacuation Window** |
-| **Spatial Resolution** | 12km to 3km | **0.04° (~4km grid)** | High-resolution valley tracking |
-| **Probability of Detection (POD)** | 0.58 | **0.84** | **+44.8% Detection Rate** |
-| **False Alarm Ratio (FAR)** | 0.46 | **0.19** | **58.7% Reduction in False Alarms** |
-| **Critical Success Index (CSI)** | 0.38 | **0.71** | **+86.8% Threat Score** |
+| **Spatial Resolution** | 12km to 3km | **0.25° to 0.04°** | Hyper-local targeting |
+| **Temporal Awareness** | Discrete runs | **Continuous ConvGRU** | Tracks storm lifecycle over time |
 
 ---
 

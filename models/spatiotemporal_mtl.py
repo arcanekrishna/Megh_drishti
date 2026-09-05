@@ -28,10 +28,53 @@ except ImportError:
 
 
 if TORCH_AVAILABLE:
+    class ConvGRUCell(nn.Module):
+        """
+        Convolutional GRU Cell for Spatiotemporal sequence modeling.
+        Preserves spatial dimensions while learning temporal dynamics.
+        """
+        def __init__(self, input_dim, hidden_dim, kernel_size=3):
+            super().__init__()
+            padding = kernel_size // 2
+            self.hidden_dim = hidden_dim
+            
+            self.conv_gates = nn.Conv2d(input_dim + hidden_dim, 2 * hidden_dim, kernel_size, padding=padding)
+            self.conv_can = nn.Conv2d(input_dim + hidden_dim, hidden_dim, kernel_size, padding=padding)
+
+        def forward(self, x, h):
+            if h is None:
+                h = torch.zeros(x.size(0), self.hidden_dim, x.size(2), x.size(3), device=x.device)
+                
+            combined = torch.cat([x, h], dim=1)
+            gates = torch.sigmoid(self.conv_gates(combined))
+            reset_gate, update_gate = gates.chunk(2, dim=1)
+            
+            combined_reset = torch.cat([x, reset_gate * h], dim=1)
+            can_h = torch.tanh(self.conv_can(combined_reset))
+            
+            h_new = (1 - update_gate) * h + update_gate * can_h
+            return h_new
+
+    class TemporalEncoder(nn.Module):
+        """
+        Processes multi-frame inputs (e.g. 6 hours of weather data) through a ConvGRU
+        to extract a temporally-aware hidden representation of atmospheric dynamics.
+        """
+        def __init__(self, in_channels, hidden_dim):
+            super().__init__()
+            self.rnn_cell = ConvGRUCell(input_dim=in_channels, hidden_dim=hidden_dim)
+
+        def forward(self, x):
+            # x shape: (B, T, C, H, W)
+            b, t, c, h, w = x.shape
+            hidden = None
+            for step in range(t):
+                hidden = self.rnn_cell(x[:, step, :, :, :], hidden)
+            return hidden
+
     class SpatiotemporalResidualBlock(nn.Module):
         """
-        Extracts spatiotemporal atmospheric features combining temporal aggregation
-        and spatial convolutions with residual skips.
+        Extracts spatial atmospheric features with residual skips.
         """
         def __init__(self, in_channels: int, out_channels: int):
             super().__init__()
@@ -59,7 +102,8 @@ if TORCH_AVAILABLE:
             self.out_steps = out_steps
             
             # 1. Temporal Compression & Multi-Modal Fusion Backbone
-            self.backbone_entry = nn.Conv2d(in_channels * in_steps, hidden_dim, kernel_size=3, padding=1)
+            self.temporal_encoder = TemporalEncoder(in_channels, hidden_dim)
+            
             self.block1 = SpatiotemporalResidualBlock(hidden_dim, hidden_dim * 2)
             self.block2 = SpatiotemporalResidualBlock(hidden_dim * 2, hidden_dim * 2)
             
@@ -87,8 +131,9 @@ if TORCH_AVAILABLE:
             )
             
             # Head 3: Topography-Coupled Flash Flood Head
+            # Concatenates static DEM terrain (3 channels: elev, slope, runoff) with features
             self.head_flash_flood = nn.Sequential(
-                nn.Conv2d(hidden_dim * 2, hidden_dim, kernel_size=3, padding=1),
+                nn.Conv2d(hidden_dim * 2 + 3, hidden_dim, kernel_size=3, padding=1),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(hidden_dim, out_steps, kernel_size=1),
                 nn.Sigmoid()
@@ -102,12 +147,10 @@ if TORCH_AVAILABLE:
                 Dict with 'thunderstorm', 'cloudburst', 'flash_flood'
                 each of shape (B, T_out, H, W)
             """
-            b, t, c, h, w = x.shape
-            # Flatten temporal and channel dimensions for shared spatiotemporal backbone
-            x_flat = x.view(b, t * c, h, w)
+            # Extract temporal dynamics
+            feat = self.temporal_encoder(x) # (B, hidden_dim, H, W)
             
-            # Shared feature extraction
-            feat = F.relu(self.backbone_entry(x_flat))
+            # Shared spatial feature extraction
             feat = self.block1(feat)
             feat = self.block2(feat)
             
@@ -118,7 +161,12 @@ if TORCH_AVAILABLE:
             # Multi-Task Heads
             p_thunderstorm = self.head_thunderstorm(attended_feat) # (B, out_steps, H, W)
             p_cloudburst = self.head_cloudburst(attended_feat)     # (B, out_steps, H, W)
-            p_flash_flood = self.head_flash_flood(attended_feat)   # (B, out_steps, H, W)
+            
+            # Flash Flood Head (Terrain Conditioning)
+            # Extracted from the last input frame (t=-1), assuming channels 7, 8, 9 are DEM features
+            dem_feat = x[:, -1, 7:10, :, :]
+            ff_input = torch.cat([attended_feat, dem_feat], dim=1)
+            p_flash_flood = self.head_flash_flood(ff_input)        # (B, out_steps, H, W)
             
             return {
                 "thunderstorm": p_thunderstorm,
@@ -166,7 +214,7 @@ class WeatherNowcastingInferenceEngine:
               - 'thunderstorm': (Out_Steps, H, W) probabilities
               - 'cloudburst': (Out_Steps, H, W) probabilities
               - 'flash_flood': (Out_Steps, H, W) probabilities
-              - 'lead_times_hours': [0.5, 1.0, 1.5, 2.0, 2.5, 3.0] or up to 6.0
+              - 'lead_times_hours': [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
               - 'max_risk_level': 'RED' | 'ORANGE' | 'YELLOW' | 'GREEN'
         """
         if input_tensor.ndim == 4:
@@ -186,8 +234,8 @@ class WeatherNowcastingInferenceEngine:
             # High-fidelity physics-guided calibrated inference
             ts_pred, cb_pred, ff_pred = self._calibrated_vectorized_inference(input_tensor, feature_names)
 
-        # Generate lead time markers (30-minute intervals up to out_steps)
-        lead_times = [round((i + 1) * 0.5, 1) for i in range(self.out_steps)]
+        # Generate lead time markers (1-hour intervals for a 2-6 hour actionable window)
+        lead_times = [float(i + 1) for i in range(self.out_steps)]
         
         # Assess overall maximum threat level across all hazards and lead times
         max_threat = max(float(np.max(ts_pred)), float(np.max(cb_pred)), float(np.max(ff_pred)))

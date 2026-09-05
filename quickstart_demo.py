@@ -66,7 +66,7 @@ def run_pipeline(num_timesteps: int = 120, grid_resolution: float = 0.04):
     
     print("\n[Step 5/5] Generating Supervised Sliding Windows for 2-6 Hour Nowcasting...")
     # in_steps = 6 frames (past 3 hrs precursors), out_steps = 6 frames (future 3 hrs lead time)
-    X, Y = engine.create_spatiotemporal_sliding_windows(tensor, in_steps=6, out_steps=6)
+    X = engine.create_spatiotemporal_sliding_windows(tensor, in_steps=6, out_steps=6)
     
     print("\n" + "=" * 75)
     print("🎉 SUCCESS: Multi-modal Data Matrix Ready for AI Model Training & Inference!")

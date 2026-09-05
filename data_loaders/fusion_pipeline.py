@@ -20,12 +20,60 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
+class PhysicsNormalizer:
+    def __init__(self, config_path: str = None):
+        if config_path is None:
+            # Default to the normalization config in models/
+            config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "normalization_config.json")
+        
+        self.bounds = {}
+        try:
+            import json
+            with open(config_path, "r") as f:
+                config = json.load(f)
+                self.bounds = config.get("channels", {})
+        except Exception as e:
+            print(f"[!] Warning: Could not load normalizer config from {config_path}: {e}")
+            # Fallbacks for critical channels if file missing
+            self.bounds = {
+                "sat_cloud_top_temp": {"min": 190, "max": 320},
+                "sat_water_vapor_iwv": {"min": 0, "max": 80},
+                "sat_qpe_rainfall_rate": {"min": 0, "max": 150},
+                "thermo_cape": {"min": 0, "max": 5000},
+                "thermo_cin": {"min": 0, "max": 500},
+                "thermo_wind_shear": {"min": 0, "max": 50},
+                "dem_elevation": {"min": 0, "max": 8500},
+                "dem_slope": {"min": 0, "max": 60},
+                "dem_runoff_potential": {"min": 0, "max": 1}
+            }
+
+    def normalize(self, arr: np.ndarray, var_name: str) -> np.ndarray:
+        # Fuzzy match variable name to bounds
+        matched_key = None
+        for k in self.bounds.keys():
+            if k in var_name or var_name in k:
+                matched_key = k
+                break
+                
+        if matched_key:
+            c_min = self.bounds[matched_key]["min"]
+            c_max = self.bounds[matched_key]["max"]
+            arr_norm = (arr - c_min) / (c_max - c_min + 1e-6)
+            return np.clip(arr_norm, 0.0, 1.0)
+        else:
+            # Fallback to standard min-max if unknown variable
+            c_min, c_max = np.min(arr), np.max(arr)
+            if c_max > c_min:
+                return (arr - c_min) / (c_max - c_min)
+            return np.zeros_like(arr)
+
 class MultimodalWeatherFusionEngine:
     def __init__(self, target_resolution: float = 0.04):
         """
         target_resolution: Grid step in degrees (~0.04° is ~4km resolution)
         """
         self.resolution = target_resolution
+        self.normalizer = PhysicsNormalizer()
         
     def align_and_fuse(
         self,
@@ -104,12 +152,8 @@ class MultimodalWeatherFusionEngine:
             # Handle NaNs / Missing values
             arr = np.nan_to_num(arr, nan=0.0)
             
-            # Channel-wise Min-Max Normalization (0 to 1) for Deep Learning stability
-            min_val, max_val = np.min(arr), np.max(arr)
-            if max_val > min_val:
-                arr_norm = (arr - min_val) / (max_val - min_val)
-            else:
-                arr_norm = np.zeros_like(arr)
+            # Physics-based Normalization (0 to 1) preventing leakage
+            arr_norm = self.normalizer.normalize(arr, var)
                 
             arrays.append(arr_norm)
             
@@ -123,18 +167,18 @@ class MultimodalWeatherFusionEngine:
         tensor: np.ndarray,
         in_steps: int = 6,   # Past 3 hours (6 x 30min frames)
         out_steps: int = 6   # Future 3 to 6 hours lead-time (6 x 30min frames)
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> np.ndarray:
         """
-        Transforms a continuous multi-timestep tensor into supervised (Input_Sequence, Target_Sequence) pairs.
+        Transforms a continuous multi-timestep tensor into supervised Input_Sequence pairs.
+        (Target label generation is handled separately by label_generator.py to prevent leakage).
         
         Args:
             tensor: Shape (Total_Timesteps, Channels, Lat, Lon) e.g. (120, 9, 100, 100)
-            in_steps: Number of past precursor frames fed into AI model (default 6 frames = 3 hrs)
-            out_steps: Number of future nowcasting frames predicted (default 6 frames = 3 hrs lead time)
+            in_steps: Number of past precursor frames fed into AI model (default 6 frames)
+            out_steps: Number of future nowcasting frames predicted (determines valid sample count)
             
         Returns:
             X (Inputs):  Shape (Num_Samples, In_Steps, Channels, Lat, Lon)
-            Y (Targets): Shape (Num_Samples, Out_Steps, Target_Channels, Lat, Lon)
         """
         total_time, n_channels, n_lat, n_lon = tensor.shape
         window_size = in_steps + out_steps
@@ -144,17 +188,14 @@ class MultimodalWeatherFusionEngine:
             
         num_samples = total_time - window_size + 1
         X = np.zeros((num_samples, in_steps, n_channels, n_lat, n_lon), dtype=np.float32)
-        Y = np.zeros((num_samples, out_steps, n_channels, n_lat, n_lon), dtype=np.float32)
         
         for i in range(num_samples):
             X[i] = tensor[i : i + in_steps]
-            Y[i] = tensor[i + in_steps : i + window_size]
             
         print(f"[✓] Created Supervised Spatio-Temporal Dataset:")
         print(f"    Total Samples: {num_samples} (3-digit dataset size)")
         print(f"    Input X (Precursors):  Shape {X.shape} -> (Batch, Past_Steps, Channels, H, W)")
-        print(f"    Target Y (Nowcasting): Shape {Y.shape} -> (Batch, Future_Lead_Steps, Channels, H, W)")
-        return X, Y
+        return X
 
 
 if __name__ == "__main__":
