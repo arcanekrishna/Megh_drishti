@@ -77,10 +77,10 @@ except ImportError:
 # ---------------------------------------------------------------------------
 class WeatherEngineState:
     def __init__(self):
-        self.resolution = 0.25          # 0.25° grid → more cells, richer heatmap
-        self.lat_min, self.lat_max = 29.5, 32.5
-        self.lon_min, self.lon_max = 76.0, 80.0
-        self.lats = np.arange(self.lat_min, self.lat_max + 1e-5, self.resolution)
+        self.resolution = 0.25
+        self.lat_max, self.lat_min = 34.0, 28.0
+        self.lon_min, self.lon_max = 74.0, 82.0
+        self.lats = np.arange(self.lat_max, self.lat_min - 1e-5, -self.resolution)
         self.lons = np.arange(self.lon_min, self.lon_max + 1e-5, self.resolution)
         self.n_lat = len(self.lats)
         self.n_lon = len(self.lons)
@@ -161,81 +161,82 @@ class WeatherEngineState:
 
     # -----------------------------------------------------------------------
     def run_simulation_scenario(self, scenario_name: str = "himachal_cloudburst_2023"):
-        """
-        Generates realistic calibrated spatiotemporal multi-modal tensors.
-        Resolution upgraded to 0.25° for denser, more visually compelling heatmaps.
-        """
         self.current_scenario = scenario_name
         self.last_update_time = datetime.now()
-        rng = np.random.default_rng(seed=42)  # reproducible
+        
+        # Load real ERA5 data instead of mock generation
+        nc_path = "data/raw/historical/era5_monsoon_2023.nc"
+        import xarray as xr
+        import numpy as np
+        try:
+            ds = xr.open_dataset(nc_path)
+            # Find the time of maximum precipitation to simulate a real event
+            tp = ds['tp'].values
+            max_t = np.unravel_index(np.argmax(tp), tp.shape)[0]
+            start_t = max(0, max_t - self.in_steps)
+            
+            tensor = np.zeros((self.in_steps, 10, self.n_lat, self.n_lon), dtype=np.float32)
+            
+            for i, t in enumerate(range(start_t, start_t + self.in_steps)):
+                tensor[i, 0] = ds.get('cbh', xr.zeros_like(ds['tp'])).values[t]
+                tensor[i, 1] = ds.get('tcwv', xr.zeros_like(ds['tp'])).values[t]
+                tensor[i, 2] = ds.get('tp', xr.zeros_like(ds['tp'])).values[t]
+                tensor[i, 3] = ds.get('cape', xr.zeros_like(ds['tp'])).values[t]
+                tensor[i, 4] = ds.get('cin', xr.zeros_like(ds['tp'])).values[t]
+                try:
+                    u = ds.get('u10').values[t]
+                    v = ds.get('v10').values[t]
+                    tensor[i, 5] = np.abs(u - v)
+                except:
+                    pass
+                tensor[i, 6] = ds.get('t2m', xr.zeros_like(ds['tp'])).values[t]
+                
+            # NaNs to 0 (clear sky)
+            tensor = np.nan_to_num(tensor, nan=0.0)
+            
+            # --- REALISTIC TOPOGRAPHY ---
+            # Delhi is flat (~0 slope), Himalayas are steep
+            lat_g, lon_g = np.meshgrid(self.lats, self.lons, indexing="ij")
+            elevation = np.clip((lat_g - 29.5) / 4.0, 0, 1)  # Starts rising north of 29.5N (Delhi is ~28.6N)
+            slope = 0.8 * elevation * (0.5 + 0.5 * np.sin(lon_g * 10))
+            for i in range(self.in_steps):
+                tensor[i, 7] = elevation
+                tensor[i, 8] = slope
+                tensor[i, 9] = 0.5 * slope
 
-        tensor = np.zeros((self.in_steps, 10, self.n_lat, self.n_lon), dtype=np.float32)
-        lat_g, lon_g = np.meshgrid(self.lats, self.lons, indexing="ij")
-        elevation = 0.2 + 0.7 * np.clip((lat_g - 29.0) / 3.0, 0, 1) ** 1.5
-        slope     = 0.3 + 0.6 * np.sin(lat_g * 6.0) ** 2 * np.cos(lon_g * 5.0) ** 2
-        runoff    = 0.4 + 0.5 * slope
-
-        for t in range(self.in_steps):
-            # Add spatial noise for visual texture (small-scale variability)
-            noise = rng.normal(0, 0.02, (self.n_lat, self.n_lon)).astype(np.float32)
-
-            tensor[t, 7] = elevation
-            tensor[t, 8] = slope
-            tensor[t, 9] = runoff
-
-            tensor[t, 0] = np.clip(0.75 - 0.05 * t + noise, 0, 1)   # CTT (cooling)
-            tensor[t, 1] = np.clip(0.40 + 0.04 * t + noise, 0, 1)   # IWV (rising)
-            tensor[t, 2] = 0.10                                        # QPE baseline
-            tensor[t, 3] = np.clip(0.50 + 0.05 * t + noise, 0, 1)   # CAPE rising
-            tensor[t, 4] = np.clip(max(0.05, 0.40 - 0.06 * t) + noise, 0, 1)  # CIN eroding
-            tensor[t, 5] = 0.55                                        # Shear
-            tensor[t, 6] = tensor[t, 1].copy()                        # WV channel
-
-            # ----- Scenario-specific convective signatures -----
+            # Use normalizer
+            import sys, os
+            sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            from data_loaders.fusion_pipeline import PhysicsNormalizer
+            normalizer = PhysicsNormalizer()
+            var_names = ["cloud_top_temp", "water_vapor_iwv", "precipitation", "cape", "cin", "wind_shear", "temp", "elevation", "slope", "runoff"]
+            
+            tensor_norm = np.zeros_like(tensor)
+            for c, var_name in enumerate(var_names):
+                tensor_norm[:, c] = normalizer.normalize(tensor[:, c], var_name)
+                
+            # --- INJECT CLOUDBURST SIGNATURE OVER HIMACHAL ---
             if scenario_name == "himachal_cloudburst_2023":
-                # Primary cell: Mandi/Kullu corridor (31.7°N, 77.0°E)
                 cy1 = int(np.argmin(np.abs(self.lats - 31.7)))
                 cx1 = int(np.argmin(np.abs(self.lons - 77.0)))
                 Y, X = np.ogrid[:self.n_lat, :self.n_lon]
-                k1 = np.exp(-((Y - cy1)**2 + (X - cx1)**2) / (2 * 5.0**2))
-                # Secondary cell: Dharamsala corridor (32.2°N, 76.3°E)
-                cy2 = int(np.argmin(np.abs(self.lats - 32.2)))
-                cx2 = int(np.argmin(np.abs(self.lons - 76.3)))
-                k2 = np.exp(-((Y - cy2)**2 + (X - cx2)**2) / (2 * 4.0**2)) * 0.75
+                k1 = np.exp(-((Y - cy1)**2 + (X - cx1)**2) / (2 * 1.5**2))
+                
+                for t in range(self.in_steps):
+                    # Warm at start, dropping to 0 at end
+                    tensor_norm[t, 0] = np.where(k1 > 0.5, 1.0 - (t / (self.in_steps - 1)), tensor_norm[t, 0])
+                    # Dry at start, rising to 1 at end
+                    tensor_norm[t, 1] = np.where(k1 > 0.5, (t / (self.in_steps - 1)), tensor_norm[t, 1])
+                    tensor_norm[t, 3] = np.where(k1 > 0.5, 1.0, tensor_norm[t, 3])
+                    tensor_norm[t, 4] = np.where(k1 > 0.5, 0.0, tensor_norm[t, 4])
 
-                kernel = np.clip(k1 + k2, 0, 1)
-                tensor[t, 0] = np.clip(tensor[t, 0] - kernel * (0.28 + 0.07 * t), 0, 1)
-                tensor[t, 1] = np.clip(tensor[t, 1] + kernel * (0.38 + 0.05 * t), 0, 1)
-                tensor[t, 6] = tensor[t, 1].copy()
-                tensor[t, 3] = np.clip(tensor[t, 3] + kernel * (0.32 + 0.05 * t), 0, 1)
-                tensor[t, 4] = np.maximum(0.0, tensor[t, 4] - kernel * 0.40)
-                tensor[t, 2] = np.clip(tensor[t, 2] + kernel * (0.22 + 0.11 * t), 0, 1)
-
-            elif scenario_name == "uttarakhand_kedarnath":
-                cy = int(np.argmin(np.abs(self.lats - 30.73)))
-                cx = int(np.argmin(np.abs(self.lons - 79.06)))
-                Y, X = np.ogrid[:self.n_lat, :self.n_lon]
-                kernel = np.exp(-((Y - cy)**2 + (X - cx)**2) / (2 * 5.5**2))
-                tensor[t, 0] = np.clip(tensor[t, 0] - kernel * (0.32 + 0.07 * t), 0, 1)
-                tensor[t, 1] = np.clip(tensor[t, 1] + kernel * (0.42 + 0.05 * t), 0, 1)
-                tensor[t, 6] = tensor[t, 1].copy()
-                tensor[t, 3] = np.clip(tensor[t, 3] + kernel * 0.36, 0, 1)
-                tensor[t, 8] = np.clip(tensor[t, 8] + kernel * 0.22, 0, 1)
-
-            elif scenario_name == "pre_monsoon_squall":
-                cy = int(np.argmin(np.abs(self.lats - 30.0)))
-                Y, X = np.ogrid[:self.n_lat, :self.n_lon]
-                line_kernel = np.exp(-((Y - cy)**2) / 12.0)
-                tensor[t, 0] = np.clip(tensor[t, 0] - line_kernel * 0.35, 0, 1)
-                tensor[t, 3] = np.clip(tensor[t, 3] + line_kernel * 0.40, 0, 1)
-                tensor[t, 5] = np.clip(tensor[t, 5] + line_kernel * 0.35, 0, 1)
-
-            elif scenario_name == "normal_monsoon":
-                # Benign — just background fields, no injection
-                pass
-
-        self.active_tensor = np.clip(tensor, 0.0, 1.0)
-        self.active_predictions = self._run_torch_inference(self.active_tensor, force_calibrated=True)
+            self.active_tensor = tensor_norm
+            self.active_predictions = self._run_torch_inference(self.active_tensor, force_calibrated=False)
+            
+        except Exception as e:
+            print(f"[!] Real data simulation failed, falling back to zeros: {e}")
+            self.active_tensor = np.zeros((self.in_steps, 10, self.n_lat, self.n_lon), dtype=np.float32)
+            self.active_predictions = self._run_torch_inference(self.active_tensor, force_calibrated=False)
 
         self.active_alerts = self.alert_engine.generate_alerts(
             self.active_predictions,
@@ -243,10 +244,8 @@ class WeatherEngineState:
             self.lats, self.lons,
             reference_time=self.last_update_time
         )
-        print(f"[✓] Scenario '{scenario_name}' ready. Alerts: {len(self.active_alerts)}, "
-              f"Grid: {self.n_lat}×{self.n_lon}")
+        print(f"[✓] Scenario '{scenario_name}' ready. Alerts: {len(self.active_alerts)}")
 
-    # -----------------------------------------------------------------------
     def run_live_inference(self):
         """
         Fetches LIVE data from Open-Meteo and runs inference.
