@@ -350,7 +350,11 @@ async function fetchXAIAttribution(lat, lon, step, title) {
 function bilinearSample(grid, lats, lons, targetLat, targetLon) {
   const nLat = lats.length, nLon = lons.length;
   let iy = 0, ix = 0;
-  for (let i = 0; i < nLat - 1; i++) { if (targetLat >= lats[i]) iy = i; }
+  const latsDesc = lats[0] > lats[lats.length - 1];
+  for (let i = 0; i < nLat - 1; i++) { 
+      if (latsDesc) { if (targetLat <= lats[i]) iy = i; }
+      else { if (targetLat >= lats[i]) iy = i; }
+  }
   for (let j = 0; j < nLon - 1; j++) { if (targetLon >= lons[j]) ix = j; }
   iy = Math.min(iy, nLat - 2);
   ix = Math.min(ix, nLon - 2);
@@ -380,10 +384,33 @@ function getActiveGrid(probs) {
 }
 
 function getHazardColor(prob, layer) {
-  if (prob >= 0.75) return '#ef4444';
-  if (prob >= 0.50) return '#f97316';
-  if (prob >= 0.30) return '#f59e0b';
-  return '#10b981';
+  // Smooth continuous gradient for high-end aesthetic
+  const p = Math.max(0, Math.min(1, prob));
+  
+  if (layer === 'flash_flood') {
+      // Dark Blue to Cyan to White-ish Cyan
+      const r = Math.floor(16 + p * (0 - 16));
+      const g = Math.floor(185 + p * (255 - 185));
+      const b = Math.floor(129 + p * (255 - 129));
+      if (p > 0.75) return '#06b6d4';
+      if (p > 0.40) return '#0ea5e9';
+      return '#3b82f6';
+  }
+  
+  if (layer === 'thunderstorm') {
+      // Yellow to Orange to Purple
+      if (p > 0.80) return '#9333ea';
+      if (p > 0.50) return '#f97316';
+      if (p > 0.30) return '#eab308';
+      return '#84cc16';
+  }
+  
+  // Cloudburst: Green -> Yellow -> Orange -> Red -> Deep Red
+  if (p >= 0.85) return '#991b1b';
+  if (p >= 0.70) return '#dc2626';
+  if (p >= 0.50) return '#f97316';
+  if (p >= 0.30) return '#eab308';
+  return '#22c55e';
 }
 
 function renderNowcastOnMap(data) {

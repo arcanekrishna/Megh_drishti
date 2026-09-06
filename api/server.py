@@ -293,6 +293,12 @@ class WeatherEngineState:
         slope        = 0.3 + 0.6 * np.sin(lat_g * 6.0) ** 2 * np.cos(lon_g * 5.0) ** 2
         runoff       = 0.4 + 0.5 * slope
 
+        # Create a localized spatial falloff so the single data point doesn't cover all of India
+        lat_center = (self.lat_min + self.lat_max) / 2.0
+        lon_center = (self.lon_min + self.lon_max) / 2.0
+        dist_sq = (lat_g - lat_center)**2 + (lon_g - lon_center)**2
+        spatial_mask = np.exp(-dist_sq / 8.0).astype(np.float32)
+
         for t in range(self.in_steps):
             di   = min(start_idx + t, len(data["time"]) - 1)
             noise = rng.normal(0, 0.025, (self.n_lat, self.n_lon)).astype(np.float32)
@@ -308,11 +314,11 @@ class WeatherEngineState:
             shear = abs(ws500 - ws850)
             temp  = (data["temperature_2m"][di] or 20.0) / 50.0
 
-            tensor[t, 0, :, :] = np.clip(cc   + noise, 0, 1)
-            tensor[t, 1, :, :] = np.clip(iwv  + noise, 0, 1)
-            tensor[t, 2, :, :] = np.clip(prec + noise, 0, 1)
-            tensor[t, 3, :, :] = np.clip(cape + noise, 0, 1)
-            tensor[t, 4, :, :] = np.clip(cin  + noise, 0, 1)
+            tensor[t, 0, :, :] = np.clip((cc * spatial_mask) + noise, 0, 1)
+            tensor[t, 1, :, :] = np.clip((iwv * spatial_mask) + noise, 0, 1)
+            tensor[t, 2, :, :] = np.clip((prec * spatial_mask) + noise, 0, 1)
+            tensor[t, 3, :, :] = np.clip((cape * spatial_mask) + noise, 0, 1)
+            tensor[t, 4, :, :] = np.clip(cin + noise, 0, 1)
             tensor[t, 5, :, :] = np.clip(shear + noise * 0.5, 0, 1)
             tensor[t, 6, :, :] = tensor[t, 1]
             tensor[t, 7, :, :] = elevation
