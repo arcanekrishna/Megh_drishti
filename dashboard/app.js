@@ -464,6 +464,7 @@ function renderNowcastOnMap(data) {
       const marker = L.circleMarker([pt.lat, pt.lon], {
         radius: r, color: mColor, weight:2,
         fillColor: mColor, fillOpacity:0.85,
+        className: pt.threat_level === 'RED' ? 'pulse-marker' : ''
       });
       marker.bindPopup(buildHotspotPopup(pt));
       marker.addTo(state.mapLayers.hotspotLayerGroup);
@@ -538,6 +539,7 @@ function renderFallbackOnMap() {
     const m = L.circleMarker([zone.lat, zone.lon], {
       radius: r, color: mColor, weight:2,
       fillColor: mColor, fillOpacity:0.9,
+      className: zone.sev === 'RED' ? 'pulse-marker' : ''
     });
     m.bindPopup(buildHotspotPopup({
       lat: zone.lat, lon: zone.lon,
